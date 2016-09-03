@@ -1,0 +1,2 @@
+Simple audio player based on easy-audio library. Can play FLAC and WavPack files
+by now. Implemented as PLAY, STOP and PAUSE functions in JUST-PLAYER package.
