@@ -58,39 +58,29 @@
           (:paused (setf state :playing)
                    (condition-notify (player-condvar player))))))))
 
-(defun play% (file start end)
-  "Play a track (w/o error handling)"
-  (let* ((player (make-instance 'player))
-         (state (player-state player)))
-    (declare (type player-state state))
-    (when (member state '(:playing :paused))
-      (stop)
-      (return-from play% (play file start end)))
-    (setf
-     (player-state player) :playing
-     (player-thread player)
-     (make-thread
-      (lambda ()
-        (with-open-file (in file :element-type '(unsigned-byte 8))
-          (with-audio-backend (backend oss-backend)
-            (let ((source (make-audio-source in (pathname-type (pathname file))
-                                             start end)))
-              (if (/= (configure-parameters backend source)
-                      (source-blocksize source))
-                  (error 'player-error :message "Cannot set native block size"))
-              (prepare-decoder source)
-              (loop with state = :playing
-                 while (and (data-available-p source)
-                            (eq state :playing)) do
-                   (write-data-frame backend source)
-                   (with-lock-held ((player-mutex player))
-                     (setq state (player-state player))
-                     (when (eq state :paused)
-                       (condition-wait
-                        (player-condvar player)
-                        (player-mutex player))
-                       (setq state (player-state player)))))))))
-      :name "Player thread"))))
+(defun play-body (file start end)
+  "Player thread loop"
+  (with-open-file (in file :element-type '(unsigned-byte 8))
+    (with-audio-backend (backend oss-backend)
+      (let ((source (make-audio-source in (pathname-type (pathname file))
+                                       start end)))
+        (if (/= (configure-parameters backend source)
+                (source-blocksize source))
+            (error 'player-error :message "Cannot set native block size"))
+        (prepare-decoder source)
+        (loop
+           with state = :playing
+           with player = (make-instance 'player)
+           while (and (data-available-p source)
+                      (eq state :playing)) do
+             (write-data-frame backend source)
+             (with-lock-held ((player-mutex player))
+               (setq state (the player-state (player-state player)))
+               (when (eq state :paused)
+                 (condition-wait
+                  (player-condvar player)
+                  (player-mutex player))
+                 (setq state (the player-state (player-state player))))))))))
 
 (defun error-handler (c)
   (declare (ignore c))
@@ -98,10 +88,22 @@
   (setf (player-state (make-instance 'player)) :stop)
   ;; And let it crash
   ;; Backend and source will be closed automatically
-  )
+)
 
 (defun play (file &optional start end)
   "Play an audio FILE, optionally starting on START second end ending on END"
-  (handler-bind
-      ((player-error #'error-handler))
-    (play% file start end)))
+  (let* ((player (make-instance 'player))
+         (state (player-state player)))
+    (declare (type player-state state))
+    (when (member state '(:playing :paused))
+      (stop)
+      (return-from play (play file start end)))
+    (setf
+     (player-state player) :playing
+     (player-thread player)
+     (make-thread
+      (lambda ()
+        (handler-bind
+            ((player-error #'error-handler))
+          (play-body file start end)))
+      :name "Player thread"))))
