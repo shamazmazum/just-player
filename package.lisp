@@ -2,4 +2,5 @@
   (:use #:cl #:cl-oss #:bordeaux-threads)
   (:export #:play
            #:stop
-           #:pause))
+           #:pause
+           #:print-status))

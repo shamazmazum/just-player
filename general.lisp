@@ -27,6 +27,18 @@ is defined in CONFIGURE-PARAMETERS call and is both backend and source dependant
           (progn ,@body)
        (close-backend ,name))))
 
+(defstruct track-info
+  artist album title)
+
+(defun key/val-from-vorbis-comment (comment)
+  (declare (type string comment))
+  (let ((eq-pos (position #\= comment)))
+    (if (not eq-pos) (error 'player-error :message "Not a vorbis comment"))
+    (cons
+     (intern (string-upcase (subseq comment 0 eq-pos))
+             (find-package :keyword))
+     (subseq comment (1+ eq-pos)))))
+
 (defclass audio-source ()
   ((stream         :initarg :stream
                    :reader source-stream
@@ -35,7 +47,9 @@ is defined in CONFIGURE-PARAMETERS call and is both backend and source dependant
                    :documentation "easy-audio's BITREADER")
    (sample-counter :accessor sample-counter
                    :initform 0
-                   :documentation "Index of the current sample to be decoded"))
+                   :documentation "Index of the current sample to be decoded")
+   (track-info     :accessor track-info
+                   :initform (make-track-info)))
   (:documentation "General audio source class"))
 
 (defclass time-interval ()
@@ -55,6 +69,8 @@ is defined in CONFIGURE-PARAMETERS call and is both backend and source dependant
                `(defmethod ,getter-name ((,object ,class))
                   (,accessor (,function ,object)))))))
 
+(defgeneric initialize-track-info (source)
+  (:documentation "Initialize track-info slot based on metadata"))
 (defgeneric prepare-decoder (source)
   (:documentation "PREPARE-DECODER is called before the first data block is decoded."))
 (defgeneric data-available-p (source)
@@ -84,6 +100,11 @@ is defined in CONFIGURE-PARAMETERS call and is both backend and source dependant
       (seek source (interval-start source))))
 
 ;; General AUDIO-SOURCE/AUDIO-BACKEND methods
+#+nil
+(defmethod initialize-instance :after ((source audio-source) &rest opts)
+  (declare (ignore opts))
+  (initialize-track-info source))
+
 (defmethod seek :around ((source audio-source) seconds)
   (let ((sample (floor (* seconds (source-samplerate source)))))
     (call-next-method source sample)

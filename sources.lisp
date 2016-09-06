@@ -13,6 +13,20 @@
     (source-blocksize    . flac:streaminfo-minblocksize)
     (source-totalsamples . flac:streaminfo-totalsamples)))
 
+(defmethod initialize-track-info ((source flac-source))
+  (let ((vorbis-comment (find 'flac:vorbis-comment (flac-metadata source)
+                              :key #'type-of)))
+    (if vorbis-comment
+        (let ((track-info (track-info source))
+              (parsed-comments (mapcar #'key/val-from-vorbis-comment
+                                       (flac:vorbis-user-comments vorbis-comment))))
+          (setf (track-info-artist track-info)
+                (cdr (assoc :artist parsed-comments))
+                (track-info-album track-info)
+                (cdr (assoc :album parsed-comments))
+                (track-info-title track-info)
+                (cdr (assoc :title parsed-comments)))))))
+
 (defmethod initialize-instance :after ((source flac-source) &rest args)
   (declare (ignore args))
   (handler-bind
@@ -26,7 +40,8 @@
     (declare (type flac:streaminfo streaminfo))
     (if (/= (flac:streaminfo-minblocksize streaminfo)
             (flac:streaminfo-maxblocksize streaminfo))
-        (error 'player-error :message "Variable block size"))))
+        (error 'player-error :message "Variable block size")))
+  (initialize-track-info source))
 
 (defmethod prepare-decoder ((source flac-source))
   (let ((streaminfo (first (flac-metadata source))))
