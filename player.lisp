@@ -83,7 +83,10 @@
                  (condition-wait
                   (player-condvar player)
                   (player-mutex player))
-                 (setq state (the player-state (player-state player))))))))))
+                 (setq state (the player-state (player-state player))))))
+        (with-lock-held ((player-mutex player))
+          (setf (player-state player) :stop)
+          (slot-makunbound player 'current-source))))))
 
 (defun error-handler (c)
   (declare (ignore c))
@@ -154,8 +157,8 @@
         (format stream "~{~a~^ ~}" (mapcar #'process-item format-list))))))
 
 (defun print-status (&optional (stream *standard-output*))
-  (let ((stop-status-printer (make-status-printer '("State:" :state)))
-        (play/pause-status-printer (make-status-printer '("State" :state :artist
+  (let ((stop-status-printer (make-status-printer '(:state)))
+        (play/pause-status-printer (make-status-printer '(:state :artist
                                                           "-" :title :time-played
                                                           "/" :time-total)))
         (player (make-instance 'player))
