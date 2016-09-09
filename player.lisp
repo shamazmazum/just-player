@@ -9,24 +9,12 @@
    (state  :accessor player-state
            :initform :stop
            :type player-state)
-   (current-source
-           :accessor player-current-source))
+   (queue  :accessor player-queue
+           :initform (make-instance 'empty-queue)))
   (:metaclass singleton)
   (:documentation "Singleton player class"))
 
 (deftype player-state () `(member :stop :paused :playing))
-
-(defun make-audio-source (stream type start end)
-  "Make audio source based on file extension"
-  (let ((class-type
-         (cond
-           ((string= "flac" type) 'flac-source)
-           ((string= "wv" type) 'wv-source)
-           (t (error 'player-error :message "Unknown file type")))))
-    (make-instance class-type
-                   :stream stream
-                   :start start
-                   :end end)))
 
 (defun player-thread-alive-p (player)
   "If player is playing or paused"
@@ -59,34 +47,37 @@
                    (condition-notify (player-condvar player))
                    :playing))))))
 
-(defun play-body (file start end)
+(defun play-body ()
   "Player thread loop"
-  (with-open-file (in file :element-type '(unsigned-byte 8))
+  (let* ((player (make-instance 'player))
+         (queue (player-queue player))
+         (current-source (queue-current-source queue)))
     (with-audio-backend (backend oss-backend)
-      (let ((source (make-audio-source in (pathname-type (pathname file))
-                                       start end))
-            (player (make-instance 'player)))
-        (if (/= (configure-parameters backend source)
-                (source-blocksize source))
-            (error 'player-error :message "Cannot set native block size"))
-        (prepare-decoder source)
-        (with-lock-held ((player-mutex player))
-          (setf (player-current-source player) source))
-        (loop
-           with state = :playing
-           while (and (data-available-p source)
-                      (eq state :playing)) do
-             (write-data-frame backend source)
-             (with-lock-held ((player-mutex player))
-               (setq state (the player-state (player-state player)))
-               (when (eq state :paused)
-                 (condition-wait
-                  (player-condvar player)
-                  (player-mutex player))
-                 (setq state (the player-state (player-state player))))))
-        (with-lock-held ((player-mutex player))
-          (setf (player-state player) :stop)
-          (slot-makunbound player 'current-source))))))
+      (with-current-source queue
+        (loop for next-source = (next-source queue)
+           while next-source do
+             (when (not (eq next-source current-source))
+               (if (/= (configure-parameters backend next-source)
+                       (source-blocksize next-source))
+                   (error 'player-error :message "Cannot set native block size"))
+               (prepare-decoder next-source))
+
+             (loop
+                with state = :playing
+                while (and (data-available-p next-source)
+                           (eq state :playing)) do
+                  (write-data-frame backend next-source)
+                  (with-lock-held ((player-mutex player))
+                    (setq state (the player-state (player-state player)))
+                    (when (eq state :paused)
+                      (condition-wait
+                       (player-condvar player)
+                       (player-mutex player))
+                      (setq state (the player-state (player-state player))))))
+
+             (setq current-source next-source))))
+    (with-lock-held ((player-mutex player))
+      (setf (player-state player) :stop))))
 
 (defun error-handler (c)
   (declare (ignore c))
@@ -96,14 +87,16 @@
   ;; Backend and source will be closed automatically
 )
 
-(defun play (file &optional start end)
+(defun play (&key queue idx)
   "Play an audio FILE, optionally starting on START second end ending on END"
   (let* ((player (make-instance 'player))
          (state (player-state player)))
     (declare (type player-state state))
     (when (member state '(:playing :paused))
       (stop)
-      (return-from play (play file start end)))
+      (return-from play (play :queue queue :idx idx)))
+    (if queue (setf (player-queue player) queue))
+    (if idx (set-current queue idx))
     (setf
      (player-state player) :playing
      (player-thread player)
@@ -111,7 +104,7 @@
       (lambda ()
         (handler-bind
             ((player-error #'error-handler))
-          (play-body file start end)))
+          (play-body)))
       :name "Player thread")))
   :playing)
 
@@ -135,6 +128,8 @@
                          `(if (eql ,case% ,keyform) (return-from ,block-sym (progn ,@statements))))))
                `(let ,let-form ,@case-form)))))))
 
+
+;; Needs to be remade
 (defun make-status-printer (format-list)
   (lambda (source stream)
     (let ((player (make-instance 'player)))
@@ -166,6 +161,6 @@
     (with-lock-held ((player-mutex player))
       (setq state (player-state player)
             source (if (not (eq state :stop))
-                       (player-current-source player))))
+                       (queue-current-source (player-queue player))))) ; FIXME: queue lock?
     (funcall (if source play/pause-status-printer stop-status-printer) source stream)
     state))

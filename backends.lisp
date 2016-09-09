@@ -39,4 +39,5 @@
    (backend-audio-device backend)))
 
 (defmethod close-backend ((backend oss-backend))
-  (close (backend-audio-device backend)))
+  (if (slot-boundp backend 'audio-device) ; KLUDGE
+      (close (backend-audio-device backend))))

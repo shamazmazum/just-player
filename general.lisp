@@ -86,6 +86,10 @@ is defined in CONFIGURE-PARAMETERS call and is both backend and source dependant
 (defgeneric source-blocksize (source)
   (:documentation "A native block size for this source."))
 (defgeneric source-totalsamples (source))
+(defgeneric close-source (source)
+  (:documentation "Close source stream after work is done")
+  (:method ((source audio-source))
+    (close (source-stream source))))
 
 ;; TIME-INTERVAL methods
 (defmethod data-available-p and ((source time-interval))
@@ -130,7 +134,5 @@ is defined in CONFIGURE-PARAMETERS call and is both backend and source dependant
       (if instance instance
           (setf instance (call-next-method)))))
 
-;; For debugging
-(defgeneric reset-instance (class)
-  (:method ((class singleton))
-    (setf (singleton-instance class) nil)))
+(defmethod make-instances-obsolete ((class singleton))
+  (setf (singleton-instance class) nil))

@@ -8,4 +8,5 @@
                  (:file "general")
                  (:file "sources")
                  (:file "backends")
+                 (:file "queue")
                  (:file "player")))
