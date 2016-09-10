@@ -37,17 +37,19 @@
            (close-source ,source-sym)
            (setf ,source-sym nil))))))
 
-(defun make-audio-source (stream type start end)
+(defun make-audio-source (pathname start end)
   "Make audio source based on file extension"
-  (let ((class-type
-         (cond
-           ((string= "flac" type) 'flac-source)
-           ((string= "wv" type) 'wv-source)
-           (t (error 'player-error :message "Unknown file type")))))
-    (make-instance class-type
-                   :stream stream
-                   :start start
-                   :end end)))
+  (let ((stream (open pathname :element-type '(unsigned-byte 8)))
+        (type (pathname-type pathname)))
+    (let ((class-type
+           (cond
+             ((string= "flac" type) 'flac-source)
+             ((string= "wv" type) 'wv-source)
+             (t (error 'player-error :message "Unknown file type")))))
+      (make-instance class-type
+                     :stream stream
+                     :start start
+                     :end end))))
 
 ;; For debugging
 (defclass empty-queue (queue)
@@ -64,9 +66,7 @@
 (defmethod next-source ((queue one-file-queue)) ;FIXME: lock needed, but not around open
   (if (not (queue-current-source queue))
       ;; Setup a new source
-      (let ((source (make-audio-source (open (ofq-filename queue)
-                                             :element-type '(unsigned-byte 8))
-                                       (pathname-type (pathname (ofq-filename queue)))
+      (let ((source (make-audio-source (pathname (ofq-filename queue))
                                        nil nil)))
         (with-lock-held ((queue-mutex queue))
           (setf (queue-current-source queue) source)))
@@ -75,3 +75,75 @@
 
 (defmethod set-current ((queue one-file-queue) idx)
   (if (/= idx 0) (error 'player-error :message "No such track in queue")))
+
+;; More or less for real use :)
+(defclass cue-sheet-queue (queue)
+  ((filename :reader cue-filename
+             :initarg :filename)
+   (index    :accessor cue-index
+             :initform 0
+             :documentation "Current track index")
+   (tree     :accessor cue-tree
+             :documentation "Parsed cue sheet tree")
+   #+nil
+   (timings  :accessor cue-timings)
+   (track-info :accessor track-info
+               :documentation "Overriden track info")))
+
+(defmethod initialize-instance :after ((queue cue-sheet-queue) &rest args)
+  (declare (ignore args))
+  (setf (cue-tree queue)
+        (parse-cue-helper (cue-filename queue))))
+
+(defmethod next-source ((queue cue-sheet-queue))
+  (let ((tree (cue-tree queue)))
+    (let-with-lock ((queue-mutex queue)
+                    ((index (cue-index queue))
+                     (current-source (queue-current-source queue))))
+      (let ((current-track (get-track-by-idx tree index))
+            (next-track (get-track-by-idx tree (1+ index))))
+        (cond
+          ((not current-source)
+           (setq current-source
+                 (make-audio-source (merge-pathnames
+                                     (make-pathname :directory
+                                                    (pathname-directory (pathname (cue-filename queue))))
+                                     (get-file-name tree current-track))
+                                    (get-track-index-sec current-track)
+                                    (if next-track (get-track-index-sec next-track)))))
+          (current-track
+           (setf (interval-start current-source)
+                 (get-track-index-sec current-track)
+                 (interval-end current-source)
+                 (if next-track (get-track-index-sec next-track))))
+          (t
+           (close-source current-source)
+           (setq current-source nil)))
+
+        (if current-track
+            (with-lock-held ((queue-mutex queue))
+              (incf (cue-index queue))
+              (setf (queue-current-source queue) current-source
+                    (track-info queue)
+                    (make-track-info :artist (get-from-toplevel tree :performer)
+                                     :album (get-from-toplevel tree :title)
+                                     :title (get-from-track current-track :title))))))
+      current-source)))
+
+(defmethod current-source-track-info ((queue cue-sheet-queue))
+  (if (queue-current-source queue) (track-info queue)))
+
+(defmethod current-source-time-played ((queue cue-sheet-queue))
+  (let ((current-source (queue-current-source queue)))
+    (if current-source
+        (- (floor (sample-counter current-source)
+                  (source-samplerate current-source))
+           (interval-start current-source)))))
+
+(defmethod current-source-time-total ((queue cue-sheet-queue))
+  (let ((current-source (queue-current-source queue)))
+    (if current-source
+        (- (or (interval-end current-source)
+               (floor (source-totalsamples current-source)
+                      (source-samplerate current-source)))
+           (interval-start current-source)))))

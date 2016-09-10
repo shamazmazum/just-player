@@ -53,10 +53,10 @@ is defined in CONFIGURE-PARAMETERS call and is both backend and source dependant
   (:documentation "General audio source class"))
 
 (defclass time-interval ()
-  ((start :reader interval-start
+  ((start :accessor interval-start
           :initarg :start
           :initform nil)
-   (end   :reader interval-end
+   (end   :accessor interval-end
           :initarg :end
           :initform nil))
   (:documentation "Time interval class with two slots: START and END"))
