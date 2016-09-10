@@ -131,36 +131,30 @@
 
 ;; Needs to be remade
 (defun make-status-printer (format-list)
-  (lambda (source stream)
-    (let ((player (make-instance 'player)))
-      (flet ((process-item (format-item)
-               (declare (type status-line-element format-item))
-               (if (stringp format-item) format-item
-                   (case format-item
-                     (:state (player-state player))
-                     (:time-played
-                      (seconds=>string
-                       (floor (sample-counter source)
-                              (source-samplerate source))))
-                     (:time-total
-                      (seconds=>string
-                       (floor (source-totalsamples source)
-                              (source-samplerate source))))
-                     (:artist (track-info-artist (track-info source)))
-                     (:album (track-info-album (track-info source)))
-                     (:title (track-info-title (track-info source)))))))
-        (format stream "~{~a~^ ~}" (mapcar #'process-item format-list))))))
+  (lambda (stream)
+    (let* ((player (make-instance 'player))
+           (queue (player-queue player)))
+      (let-with-lock ((player-mutex player)
+                      ((state (player-state player))))
+        (let-with-lock ((queue-mutex queue)
+                        ((track-info (current-source-track-info queue))
+                         (time-played (current-source-time-played queue))
+                         (time-total (current-source-time-total queue))))
+          (flet ((process-item (format-item)
+                   (declare (type status-line-element format-item))
+                   (if (stringp format-item) format-item
+                       (case format-item
+                         (:state state)
+                         (:time-played (if time-played (seconds=>string time-played)))
+                         (:time-total (if time-total (seconds=>string time-total)))
+                         (:artist (if track-info (track-info-artist track-info)))
+                         (:album (if track-info (track-info-album track-info)))
+                         (:title (if track-info (track-info-title track-info)))))))
+            (format stream "~{~a~^ ~}" (mapcar #'process-item format-list))))
+        state))))
 
 (defun print-status (&optional (stream *standard-output*))
-  (let ((stop-status-printer (make-status-printer '(:state)))
-        (play/pause-status-printer (make-status-printer '(:state :artist
-                                                          "-" :title :time-played
-                                                          "/" :time-total)))
-        (player (make-instance 'player))
-        state source)
-    (with-lock-held ((player-mutex player))
-      (setq state (player-state player)
-            source (if (not (eq state :stop))
-                       (queue-current-source (player-queue player))))) ; FIXME: queue lock?
-    (funcall (if source play/pause-status-printer stop-status-printer) source stream)
-    state))
+  (let ((status-printer (make-status-printer '(:state :artist
+                                               "-" :title :time-played
+                                               "/" :time-total))))
+    (funcall status-printer stream)))

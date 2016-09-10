@@ -136,3 +136,15 @@ is defined in CONFIGURE-PARAMETERS call and is both backend and source dependant
 
 (defmethod make-instances-obsolete ((class singleton))
   (setf (singleton-instance class) nil))
+
+(defmacro let-with-lock ((place let-form) &body body)
+  (let ((let-list (mapcar #'car let-form))
+        (setq-list (reduce (lambda (list acc)
+                             (cons
+                              (first list)
+                              (cons (second list) acc))) let-form
+                              :from-end t :initial-value nil)))
+    `(let ,let-list
+       (with-lock-held (,place)
+         (setq ,@setq-list))
+       ,@body)))

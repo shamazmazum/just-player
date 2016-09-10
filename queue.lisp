@@ -8,11 +8,22 @@
 
 ;; This and later: must be called with lock held.
 ;; Bordeaux threads has no means to check that, lol
-(defgeneric current-source-artist (queue))
-(defgeneric current-source-album (queue))
-(defgeneric current-source-title (queue))
-(defgeneric current-source-time-played (queue))
-(defgeneric current-source-total-time (queue))
+(defgeneric current-source-track-info (queue)
+  (:method ((queue queue))
+    (let ((current-source (queue-current-source queue)))
+      (if current-source (track-info current-source)))))
+(defgeneric current-source-time-played (queue)
+  (:method ((queue queue))
+    (let ((current-source (queue-current-source queue)))
+      (if current-source
+          (floor (sample-counter current-source)
+                 (source-samplerate current-source))))))
+(defgeneric current-source-time-total (queue)
+  (:method ((queue queue))
+    (let ((current-source (queue-current-source queue)))
+      (if current-source
+          (floor (source-totalsamples current-source)
+                 (source-samplerate current-source))))))
 
 (defgeneric queue-as-list (queue)) ; Must hold lock inside
 (defgeneric next-source (queue)) ; Must hold lock inside
@@ -53,11 +64,12 @@
 (defmethod next-source ((queue one-file-queue)) ;FIXME: lock needed, but not around open
   (if (not (queue-current-source queue))
       ;; Setup a new source
-      (setf (queue-current-source queue)
-            (make-audio-source (open (ofq-filename queue)
-                                     :element-type '(unsigned-byte 8))
-                               (pathname-type (pathname (ofq-filename queue)))
-                               nil nil))
+      (let ((source (make-audio-source (open (ofq-filename queue)
+                                             :element-type '(unsigned-byte 8))
+                                       (pathname-type (pathname (ofq-filename queue)))
+                                       nil nil)))
+        (with-lock-held ((queue-mutex queue))
+          (setf (queue-current-source queue) source)))
       ;; We played one file, no more to give
       ))
 
