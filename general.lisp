@@ -86,10 +86,6 @@ is defined in CONFIGURE-PARAMETERS call and is both backend and source dependant
 (defgeneric source-blocksize (source)
   (:documentation "A native block size for this source."))
 (defgeneric source-totalsamples (source))
-(defgeneric close-source (source)
-  (:documentation "Close source stream after work is done")
-  (:method ((source audio-source))
-    (close (source-stream source))))
 
 ;; TIME-INTERVAL methods
 (defmethod data-available-p and ((source time-interval))

@@ -108,6 +108,15 @@
       :name "Player thread")))
   :playing)
 
+(defun play-cue (filename &key idx)
+  "Helper for playing cue sheets"
+  (play :queue (make-instance 'cue-sheet-queue :filename filename)
+        :idx idx))
+
+(defun play-single (filename)
+  "Helper for playing single files"
+  (play :queue (make-instance 'one-file-queue :filename filename)))
+
 (defun seconds=>string (seconds)
   (multiple-value-bind (minutes rem)
       (floor seconds 60)
@@ -127,7 +136,6 @@
                     (loop for (case% . statements) in body collect
                          `(if (eql ,case% ,keyform) (return-from ,block-sym (progn ,@statements))))))
                `(let ,let-form ,@case-form)))))))
-
 
 ;; Needs to be remade
 (defun make-status-printer (format-list)
