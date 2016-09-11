@@ -94,9 +94,7 @@
              :initarg :filename)
 
    (tree     :accessor cue-tree
-             :documentation "Parsed cue sheet tree")
-   (track-info :accessor track-info
-               :documentation "Overriden track info")))
+             :documentation "Parsed cue sheet tree")))
 
 (defmethod initialize-instance :after ((queue cue-sheet-queue) &rest args)
   (declare (ignore args))
@@ -131,14 +129,14 @@
 
           (when current-track
             (incf (queue-index queue))
-            (setf (track-info queue)
-                  (make-track-info :artist (get-from-toplevel tree :performer)
-                                   :album (get-from-toplevel tree :title)
-                                   :title (get-from-track current-track :title)))))
+            (let ((track-info (track-info current-source)))
+              (setf (track-info-artist track-info)
+                    (get-from-toplevel tree :performer)
+                    (track-info-album track-info)
+                    (get-from-toplevel tree :title)
+                    (track-info-title track-info)
+                    (get-from-track current-track :title)))))
       current-source))))
-
-(defmethod current-source-track-info ((queue cue-sheet-queue))
-  (if (queue-current-source queue) (track-info queue)))
 
 (defmethod current-source-time-played ((queue cue-sheet-queue))
   (let ((current-source (queue-current-source queue)))
