@@ -27,7 +27,7 @@
           (floor (source-totalsamples current-source)
                  (source-samplerate current-source))))))
 
-(defgeneric queue-as-list (queue)) ; Must hold lock inside
+(defgeneric queue-as-list (queue))
 (defgeneric next-source (queue)) ; Must hold lock inside
 (defgeneric set-current (queue idx)) ; DO NOT CHANGE CURRENT-SOURCE!!, may not held lock
 
@@ -42,13 +42,13 @@
 
 (defun set-audio-source (queue pathname start end) ; Must be called with lock held
   "Make audio source based on file extension"
-  (let* ((stream (open pathname :element-type '(unsigned-byte 8))) ; FIXME: lock?
-         (type (pathname-type pathname))
+  (let* ((type (pathname-type pathname))
          (class-type
           (cond
             ((string= "flac" type) 'flac-source)
             ((string= "wv" type) 'wv-source)
-            (t (error 'player-error :message "Unknown file type")))))
+            (t (error 'player-error :message "Unknown file type"))))
+         (stream (open pathname :element-type '(unsigned-byte 8)))) ; FIXME: lock?
     (setf (queue-current-stream queue) stream
           (queue-current-source queue)
           (make-instance class-type
@@ -89,8 +89,6 @@
              :documentation "Current track index")
    (tree     :accessor cue-tree
              :documentation "Parsed cue sheet tree")
-   #+nil
-   (timings  :accessor cue-timings)
    (track-info :accessor track-info
                :documentation "Overriden track info")))
 
@@ -159,3 +157,49 @@
     (if (queue-current-source queue)
         (error 'player-error :message "You must stop player first"))
     (setf (cue-index queue) idx)))
+
+(defmethod queue-as-list ((queue cue-sheet-queue))
+  (let* ((tree (cue-tree queue))
+         (tracks (second tree))
+         (artist (get-from-toplevel tree :performer))
+         (album (get-from-toplevel tree :title)))
+    (mapcar (lambda (track)
+              (make-track-info :artist artist
+                               :album album
+                               :title (get-from-track track :title)))
+            tracks)))
+
+(defclass directory-queue (queue)
+  ((directory :reader queue-directory
+              :initarg :directory
+              :initform (error "Specify directory"))
+   (index     :accessor directory-index
+              :initform 0
+              :documentation "Current track index")
+   (file-list :accessor directory-file-list)))
+
+(defmethod initialize-instance :after ((queue directory-queue) &rest args)
+  (declare (ignore args))
+  (setf (directory-file-list queue)
+        (remove #'directory-pathname-p
+                (list-directory (queue-directory queue)))))
+
+(defmethod next-source ((queue directory-queue))
+  (let ((file-list (directory-file-list queue)))
+    (with-lock-held ((queue-mutex queue))
+      (with-accessors ((current-source queue-current-source)
+                       (index directory-index)) queue
+
+        (tagbody choose-next
+           (when current-source
+             (close (queue-current-stream queue))
+             (setf current-source nil))
+
+           (let ((file-name (nth index file-list)))
+             (when file-name
+               (incf index)
+               (restart-case (set-audio-source queue file-name nil nil)
+                 (continue ()
+                   :report "Skip unreadable file and continue"
+                   (go choose-next))))))
+        current-source))))

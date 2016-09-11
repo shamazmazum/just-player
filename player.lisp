@@ -80,12 +80,15 @@
       (setf (player-state player) :stop))))
 
 (defun error-handler (c)
-  (declare (ignore c))
+  (princ c)
+  (terpri)
+  ;; Continue if we can
+  (continue)
   ;; Set player state
   (setf (player-state (make-instance 'player)) :stop)
   ;; And let it crash
   ;; Backend and source will be closed automatically
-)
+  (format t "Can't handle error, terminating player thread"))
 
 (defun play (&key queue idx)
   "Play an audio FILE, optionally starting on START second end ending on END"
@@ -103,7 +106,10 @@
      (make-thread
       (lambda ()
         (handler-bind
-            ((player-error #'error-handler))
+            (((or player-error
+                  flac:flac-error
+                  wv:wavpack-error)
+             #'error-handler))
           (play-body)))
       :name "Player thread")))
   :playing)
@@ -137,7 +143,6 @@
                          `(if (eql ,case% ,keyform) (return-from ,block-sym (progn ,@statements))))))
                `(let ,let-form ,@case-form)))))))
 
-;; Needs to be remade
 (defun make-status-printer (format-list)
   (lambda (stream)
     (let* ((player (make-instance 'player))
@@ -166,3 +171,6 @@
                                                "-" :title :time-played
                                                "/" :time-total))))
     (funcall status-printer stream)))
+
+(defun print-queue (&optional (stream *standard-output*))
+  (print (queue-as-list (player-queue (make-instance 'player))) stream))
