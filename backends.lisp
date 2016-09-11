@@ -14,6 +14,11 @@ channels etc."))
 is defined in CONFIGURE-PARAMETERS call and is both backend and source dependant."))
 (defgeneric close-backend (backend)
   (:documentation "Close backend. Must be called when backend is no longer needed."))
+(defgeneric flush-buffers (backend)
+  (:documentation "Flush buffers before long pause")
+  (:method ((backend audio-backend))
+    (declare (ignore backend))
+    t))
 
 (defmacro with-audio-backend ((name type) &body body)
   `(let ((,name (make-instance ',type)))
@@ -23,6 +28,9 @@ is defined in CONFIGURE-PARAMETERS call and is both backend and source dependant
 
 ;; OSS
 (defclass oss-backend (audio-backend) ())
+
+(defmethod flush-buffers ((backend oss-backend))
+  (force-output (backend-audio-device backend)))
 
 (defun guess-sample-format (samplesize)
   "Guess OSS sample format based on sample size"

@@ -72,6 +72,7 @@
                     (with-lock-held ((player-mutex player))
                       (setq state (the player-state (player-state player)))
                       (when (eq state :paused)
+                        (flush-buffers backend)
                         (condition-wait
                          (player-condvar player)
                          (player-mutex player))
