@@ -6,7 +6,10 @@
    (current-source :accessor queue-current-source
                    :initform nil)
    (current-stream :accessor queue-current-stream
-                   :initform nil)))
+                   :initform nil)
+   (index          :accessor queue-index
+                   :initform 0
+                   :documentation "Current track index")))
 
 ;; This and later: must be called with lock held.
 ;; Bordeaux threads has no means to check that, lol
@@ -28,8 +31,13 @@
                  (source-samplerate current-source))))))
 
 (defgeneric queue-as-list (queue))
-(defgeneric next-source (queue)) ; Must hold lock inside
-(defgeneric set-current (queue idx)) ; DO NOT CHANGE CURRENT-SOURCE!!, may not held lock
+(defgeneric next-source (queue)) ; Must hold lock inside, guarding current-source
+(defgeneric set-current (queue idx)) ; DO NOT CHANGE CURRENT-SOURCE!!
+
+(defmethod set-current ((queue queue) idx)
+  (if (queue-current-source queue)
+      (error 'player-error :message "You must stop player first"))
+  (setf (queue-index queue) idx))
 
 (defmacro with-current-source (queue &body body)
   (let ((stream-sym (gensym)))
@@ -84,9 +92,7 @@
 (defclass cue-sheet-queue (queue)
   ((filename :reader cue-filename
              :initarg :filename)
-   (index    :accessor cue-index
-             :initform 0
-             :documentation "Current track index")
+
    (tree     :accessor cue-tree
              :documentation "Parsed cue sheet tree")
    (track-info :accessor track-info
@@ -103,7 +109,7 @@
     ;; I just can't do this right on lisp, I've tryed
     (with-lock-held ((queue-mutex queue))
       (with-accessors ((current-source queue-current-source)) queue
-        (let* ((index (cue-index queue))
+        (let* ((index (queue-index queue))
                (current-track (get-track-by-idx tree index))
                (next-track (get-track-by-idx tree (1+ index))))
           (cond
@@ -124,7 +130,7 @@
              (setf current-source nil)))
 
           (when current-track
-            (incf (cue-index queue))
+            (incf (queue-index queue))
             (setf (track-info queue)
                   (make-track-info :artist (get-from-toplevel tree :performer)
                                    :album (get-from-toplevel tree :title)
@@ -153,10 +159,8 @@
   (let* ((tree (cue-tree queue))
          (track (nth idx (second tree))))
     (if (not track)
-        (error 'player-error :message "Index is too large, cannot seek"))
-    (if (queue-current-source queue)
-        (error 'player-error :message "You must stop player first"))
-    (setf (cue-index queue) idx)))
+        (error 'player-error :message "Index is too large, cannot seek")))
+  (call-next-method))
 
 (defmethod queue-as-list ((queue cue-sheet-queue))
   (let* ((tree (cue-tree queue))
@@ -203,3 +207,8 @@
                    :report "Skip unreadable file and continue"
                    (go choose-next))))))
         current-source))))
+
+(defmethod set-current ((queue directory-queue) idx)
+  (if (>= idx (length (directory-file-list queue)))
+      (error 'player-error :message "Index is too large, cannot seek"))
+  (call-next-method))

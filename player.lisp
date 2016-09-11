@@ -51,31 +51,35 @@
   "Player thread loop"
   (let* ((player (make-instance 'player))
          (queue (player-queue player))
-         (current-source (queue-current-source queue)))
+         (current-source (queue-current-source queue))
+         state)
     (with-audio-backend (backend oss-backend)
       (with-current-source queue
-        (loop for next-source = (next-source queue)
-           while next-source do
-             (when (not (eq next-source current-source))
-               (if (/= (configure-parameters backend next-source)
-                       (source-blocksize next-source))
-                   (error 'player-error :message "Cannot set native block size"))
-               (prepare-decoder next-source))
+        (block player-loop
+          (loop
+             for next-source = (next-source queue)
+             while next-source
+             do
+               (when (not (eq next-source current-source))
+                 (if (/= (configure-parameters backend next-source)
+                         (source-blocksize next-source))
+                     (error 'player-error :message "Cannot set native block size"))
+                 (prepare-decoder next-source))
 
-             (loop
-                with state = :playing
-                while (and (data-available-p next-source)
-                           (eq state :playing)) do
-                  (write-data-frame backend next-source)
-                  (with-lock-held ((player-mutex player))
-                    (setq state (the player-state (player-state player)))
-                    (when (eq state :paused)
-                      (condition-wait
-                       (player-condvar player)
-                       (player-mutex player))
-                      (setq state (the player-state (player-state player))))))
+               (loop
+                  while (data-available-p next-source)
+                  do
+                    (with-lock-held ((player-mutex player))
+                      (setq state (the player-state (player-state player)))
+                      (when (eq state :paused)
+                        (condition-wait
+                         (player-condvar player)
+                         (player-mutex player))
+                        (setq state (the player-state (player-state player)))))
+                    (if (eq state :stop) (return-from player-loop nil))
+                    (write-data-frame backend next-source))
 
-             (setq current-source next-source))))
+               (setq current-source next-source)))))
     (with-lock-held ((player-mutex player))
       (setf (player-state player) :stop))))
 
@@ -99,7 +103,7 @@
       (stop)
       (return-from play (play :queue queue :idx idx)))
     (if queue (setf (player-queue player) queue))
-    (if idx (set-current queue idx))
+    (if idx (set-current (player-queue player) idx))
     (setf
      (player-state player) :playing
      (player-thread player)
@@ -122,6 +126,14 @@
 (defun play-single (filename)
   "Helper for playing single files"
   (play :queue (make-instance 'one-file-queue :filename filename)))
+
+(defun play-directory (dirname)
+  "Helper for playing directories"
+  (play :queue (make-instance 'directory-queue :directory dirname)))
+
+(defun play-track (idx)
+  "Helper for playing a track with index IDX"
+  (play :idx idx))
 
 (defun seconds=>string (seconds)
   (multiple-value-bind (minutes rem)

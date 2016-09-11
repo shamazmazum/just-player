@@ -1,5 +1,26 @@
 (in-package :just-player)
 
+;; General definitions
+(defclass audio-backend ()
+  ((output-buffer :accessor backend-output-buffer)
+   (audio-device :accessor backend-audio-device))
+  (:documentation "General audio backend class"))
+
+(defgeneric configure-parameters (backend source)
+  (:documentation "Configure backend parameters, such as samplerate, samplesize,
+channels etc."))
+(defgeneric write-data-frame (backend source)
+  (:documentation "Write a small amount of audio data to audio device. This amount
+is defined in CONFIGURE-PARAMETERS call and is both backend and source dependant."))
+(defgeneric close-backend (backend)
+  (:documentation "Close backend. Must be called when backend is no longer needed."))
+
+(defmacro with-audio-backend ((name type) &body body)
+  `(let ((,name (make-instance ',type)))
+     (unwind-protect
+          (progn ,@body)
+       (close-backend ,name))))
+
 ;; OSS
 (defclass oss-backend (audio-backend) ())
 
