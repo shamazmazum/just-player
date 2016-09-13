@@ -43,6 +43,15 @@
              ;; Also set player state to :stop
              (setf (player-state ,player-sym) :stop)))))))
 
+(defmacro with-current-source-light (queue &body body) ; Lightened version :)
+  (let ((stream-sym (gensym)))
+    `(unwind-protect (progn ,@body)
+       (with-accessors ((,stream-sym queue-current-stream)) ,queue
+         (when ,stream-sym
+           (close ,stream-sym)
+           (setf ,stream-sym nil
+                 (queue-current-source ,queue) nil))))))
+
 (defun set-audio-source (queue pathname start end)
   "Make audio source based on file extension"
   (let* ((type (pathname-type pathname))
@@ -159,40 +168,53 @@
             tracks)))
 
 (defclass directory-queue (queue)
-  ((directory :reader queue-directory
-              :initarg :directory
-              :initform (error "Specify directory"))
-   (index     :accessor directory-index
-              :initform 0
-              :documentation "Current track index")
-   (file-list :accessor directory-file-list)))
+  ((directory  :reader queue-directory
+               :initarg :directory
+               :initform (error "Specify directory"))
+   (index      :accessor directory-index
+               :initform 0
+               :documentation "Current track index")
+   (audio-list :accessor directory-audio-list
+               :documentation "Consed audio file names and track-info's")))
 
 (defmethod initialize-instance :after ((queue directory-queue) &rest args)
   (declare (ignore args))
-  (setf (directory-file-list queue)
-        (remove #'directory-pathname-p
-                (list-directory (queue-directory queue)))))
+  (let ((file-list (remove #'directory-pathname-p
+                           (list-directory (queue-directory queue)))))
+    (flet ((populate-list (filename list)
+             (restart-case
+                 (with-current-source-light queue
+                   (set-audio-source queue filename nil nil)
+                   (let ((current-source (queue-current-source queue)))
+                     (cons (cons filename (track-info current-source))
+                           list)))
+               (continue ()
+                 :report "Skip unreadable file and continue"
+                 list))))
+      (setf (directory-audio-list queue)
+            (reduce #'populate-list file-list
+                    :from-end t
+                    :initial-value nil)))))
 
 (defmethod next-source ((queue directory-queue))
-  (let ((file-list (directory-file-list queue)))
+  (let ((audio-list (directory-audio-list queue)))
     (with-accessors ((current-source queue-current-source)
                      (index directory-index)) queue
 
-      (tagbody choose-next
-         (when current-source
-           (close (queue-current-stream queue))
-           (setf current-source nil))
+      (when current-source
+        (close (queue-current-stream queue))
+        (setf current-source nil))
 
-         (let ((file-name (nth index file-list)))
-           (when file-name
-             (incf index)
-             (restart-case (set-audio-source queue file-name nil nil)
-               (continue ()
-                 :report "Skip unreadable file and continue"
-                 (go choose-next))))))
+      (let ((file-name (car (nth index audio-list))))
+        (when file-name
+          (incf index)
+          (set-audio-source queue file-name nil nil)))
       current-source)))
 
 (defmethod set-current ((queue directory-queue) idx)
-  (if (>= idx (length (directory-file-list queue)))
+  (if (>= idx (length (directory-audio-list queue)))
       (error 'player-error :message "Index is too large, cannot seek"))
   (call-next-method))
+
+(defmethod queue-as-list ((queue directory-queue))
+  (mapcar #'cdr (directory-audio-list queue)))

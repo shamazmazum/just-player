@@ -109,12 +109,8 @@
      (player-thread player)
      (make-thread
       (lambda ()
-        (handler-bind
-            (((or player-error
-                  flac:flac-error
-                  wv:wavpack-error)
-             #'error-handler))
-          (play-body)))
+        (with-error-handling
+            (play-body)))
       :name "Player thread")))
   :playing)
 
@@ -129,7 +125,9 @@
 
 (defun play-directory (dirname)
   "Helper for playing directories"
-  (play :queue (make-instance 'directory-queue :directory dirname)))
+  (play :queue
+        (with-error-handling
+            (make-instance 'directory-queue :directory dirname))))
 
 (defun play-track (idx)
   "Helper for playing a track with index IDX"
@@ -184,4 +182,5 @@
     (funcall status-printer stream)))
 
 (defun print-queue (&optional (stream *standard-output*))
-  (print (queue-as-list (player-queue (make-instance 'player))) stream))
+  (print (queue-as-list (player-queue (make-instance 'player))) stream)
+  t)

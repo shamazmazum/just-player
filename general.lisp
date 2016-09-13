@@ -56,3 +56,11 @@
        (with-lock-held (,place)
          (setq ,@setq-list))
        ,@body)))
+
+(defmacro with-error-handling (&body body)
+  `(handler-bind
+       (((or player-error
+             flac:flac-error
+             wv:wavpack-error)
+         #'error-handler))
+    ,@body))
