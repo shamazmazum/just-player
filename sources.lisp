@@ -54,13 +54,16 @@
       (seek source (interval-start source))))
 
 ;; General AUDIO-SOURCE methods
-#+nil
-(defmethod initialize-instance :after ((source audio-source) &rest opts)
+;; KLUDGE: use :around qualifier here only to invoke this method after
+;; the most specific :after method
+(defmethod initialize-instance :around ((source audio-source) &rest opts)
   (declare (ignore opts))
+  (call-next-method)
   (initialize-track-info source))
 
 (defmethod seek :around ((source audio-source) seconds)
   (let ((sample (floor (* seconds (source-samplerate source)))))
+    ;; Probably error handling here later
     (call-next-method source sample)
     (setf (sample-counter source) sample)))
 
@@ -68,6 +71,11 @@
     (< (+ (sample-counter source)
           (source-blocksize source))
        (source-totalsamples source)))
+
+(defmethod initialize-track-info ((source audio-source))
+  (setf (track-info-time-total (track-info source))
+        (floor (source-totalsamples source)
+               (source-samplerate source))))
 
 ;; FLAC
 (defclass flac-source (audio-source time-interval)
@@ -94,7 +102,8 @@
                 (track-info-album track-info)
                 (cdr (assoc :album parsed-comments))
                 (track-info-title track-info)
-                (cdr (assoc :title parsed-comments)))))))
+                (cdr (assoc :title parsed-comments))))))
+  (call-next-method))
 
 (defmethod initialize-instance :after ((source flac-source) &rest args)
   (declare (ignore args))
@@ -109,8 +118,7 @@
     (declare (type flac:streaminfo streaminfo))
     (if (/= (flac:streaminfo-minblocksize streaminfo)
             (flac:streaminfo-maxblocksize streaminfo))
-        (error 'player-error :message "Variable block size")))
-  (initialize-track-info source))
+        (error 'player-error :message "Variable block size"))))
 
 (defmethod prepare-decoder ((source flac-source))
   (let ((streaminfo (first (flac-metadata source))))

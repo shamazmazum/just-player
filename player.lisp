@@ -164,15 +164,15 @@
                       ((state (player-state player))))
         (let-with-lock ((queue-mutex queue)
                         ((track-info (current-source-track-info queue))
-                         (time-played (current-source-time-played queue))
-                         (time-total (current-source-time-total queue))))
+                         (time-played (current-source-time-played queue))))
           (flet ((process-item (format-item)
                    (declare (type status-line-element format-item))
                    (if (stringp format-item) format-item
                        (case format-item
                          (:state state)
                          (:time-played (if time-played (seconds=>string time-played)))
-                         (:time-total (if time-total (seconds=>string time-total)))
+                         (:time-total (if track-info (seconds=>string
+                                                      (track-info-time-total track-info))))
                          (:artist (if track-info (track-info-artist track-info)))
                          (:album (if track-info (track-info-album track-info)))
                          (:title (if track-info (track-info-title track-info)))))))

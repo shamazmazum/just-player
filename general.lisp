@@ -8,7 +8,7 @@
                      (error-message c)))))
 
 (defstruct track-info
-  artist album title)
+  artist album title time-total)
 
 (defun key/val-from-vorbis-comment (comment)
   (declare (type string comment))

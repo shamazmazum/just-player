@@ -23,12 +23,6 @@
       (if current-source
           (floor (sample-counter current-source)
                  (source-samplerate current-source))))))
-(defgeneric current-source-time-total (queue)
-  (:method ((queue queue))
-    (let ((current-source (queue-current-source queue)))
-      (if current-source
-          (floor (source-totalsamples current-source)
-                 (source-samplerate current-source))))))
 
 (defgeneric queue-as-list (queue))
 (defgeneric next-source (queue)) ; Must hold lock inside, guarding current-source
@@ -135,7 +129,11 @@
                     (track-info-album track-info)
                     (get-from-toplevel tree :title)
                     (track-info-title track-info)
-                    (get-from-track current-track :title)))))
+                    (get-from-track current-track :title)
+                    (track-info-time-total track-info)
+                    (- (or (interval-end current-source)
+                           (track-info-time-total track-info))
+                       (interval-start current-source))))))
       current-source))))
 
 (defmethod current-source-time-played ((queue cue-sheet-queue))
@@ -143,14 +141,6 @@
     (if current-source
         (- (floor (sample-counter current-source)
                   (source-samplerate current-source))
-           (interval-start current-source)))))
-
-(defmethod current-source-time-total ((queue cue-sheet-queue))
-  (let ((current-source (queue-current-source queue)))
-    (if current-source
-        (- (or (interval-end current-source)
-               (floor (source-totalsamples current-source)
-                      (source-samplerate current-source)))
            (interval-start current-source)))))
 
 (defmethod set-current ((queue cue-sheet-queue) idx)
