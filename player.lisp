@@ -57,7 +57,8 @@
       (with-current-source queue
         (block player-loop
           (loop
-             for next-source = (next-source queue)
+             for next-source = (with-lock-held ((player-mutex player))
+                                 (next-source queue))
              while next-source
              do
                (when (not (eq next-source current-source))
@@ -80,9 +81,7 @@
                     (if (eq state :stop) (return-from player-loop nil))
                     (write-data-frame backend next-source))
 
-               (setq current-source next-source)))))
-    (with-lock-held ((player-mutex player))
-      (setf (player-state player) :stop))))
+               (setq current-source next-source)))))))
 
 (defun error-handler (c)
   (princ c)
@@ -161,10 +160,9 @@
     (let* ((player (make-instance 'player))
            (queue (player-queue player)))
       (let-with-lock ((player-mutex player)
-                      ((state (player-state player))))
-        (let-with-lock ((queue-mutex queue)
-                        ((track-info (current-source-track-info queue))
-                         (time-played (current-source-time-played queue))))
+                      ((state (player-state player))
+                       (track-info (current-source-track-info queue))
+                       (time-played (current-source-time-played queue))))
           (flet ((process-item (format-item)
                    (declare (type status-line-element format-item))
                    (if (stringp format-item) format-item
@@ -176,8 +174,8 @@
                          (:artist (if track-info (track-info-artist track-info)))
                          (:album (if track-info (track-info-album track-info)))
                          (:title (if track-info (track-info-title track-info)))))))
-            (format stream "~{~a~^ ~}" (mapcar #'process-item format-list))))
-        state))))
+            (format stream "~{~a~^ ~}" (mapcar #'process-item format-list)))
+          state))))
 
 (defun print-status (&optional (stream *standard-output*))
   (let ((status-printer (make-status-printer '(:state :artist

@@ -1,9 +1,7 @@
 (in-package :just-player)
 
 (defclass queue ()
-  ((queue-mutex    :accessor queue-mutex
-                   :initform (make-lock "Player queue lock"))
-   (current-source :accessor queue-current-source
+  ((current-source :accessor queue-current-source
                    :initform nil)
    (current-stream :accessor queue-current-stream
                    :initform nil)
@@ -11,8 +9,6 @@
                    :initform 0
                    :documentation "Current track index")))
 
-;; This and later: must be called with lock held.
-;; Bordeaux threads has no means to check that, lol
 (defgeneric current-source-track-info (queue)
   (:method ((queue queue))
     (let ((current-source (queue-current-source queue)))
@@ -25,7 +21,7 @@
                  (source-samplerate current-source))))))
 
 (defgeneric queue-as-list (queue))
-(defgeneric next-source (queue)) ; Must hold lock inside, guarding current-source
+(defgeneric next-source (queue))
 (defgeneric set-current (queue idx)) ; DO NOT CHANGE CURRENT-SOURCE!!
 
 (defmethod set-current ((queue queue) idx)
@@ -34,15 +30,20 @@
   (setf (queue-index queue) idx))
 
 (defmacro with-current-source (queue &body body)
-  (let ((stream-sym (gensym)))
+  (let ((stream-sym (gensym))
+        (player-sym (gensym)))
     `(unwind-protect (progn ,@body)
-       (with-accessors ((,stream-sym queue-current-stream)) ,queue
-         (when ,stream-sym
-           (close ,stream-sym)
-           (setf ,stream-sym nil
-                 (queue-current-source ,queue) nil))))))
+       (let ((,player-sym (make-instance 'player)))
+         (with-accessors ((,stream-sym queue-current-stream)) ,queue
+           (with-lock-held ((player-mutex ,player-sym))
+             (when ,stream-sym
+               (close ,stream-sym)
+               (setf ,stream-sym nil
+                     (queue-current-source ,queue) nil))
+             ;; Also set player state to :stop
+             (setf (player-state ,player-sym) :stop)))))))
 
-(defun set-audio-source (queue pathname start end) ; Must be called with lock held
+(defun set-audio-source (queue pathname start end)
   "Make audio source based on file extension"
   (let* ((type (pathname-type pathname))
          (class-type
@@ -73,9 +74,8 @@
 (defmethod next-source ((queue one-file-queue))
   (if (not (queue-current-source queue))
       ;; Setup a new source
-      (with-lock-held ((queue-mutex queue))
-        (set-audio-source queue (pathname (ofq-filename queue))
-                          nil nil))
+      (set-audio-source queue (pathname (ofq-filename queue))
+                        nil nil)
       ;; We played one file, no more to give
       ))
 
@@ -97,44 +97,41 @@
 
 (defmethod next-source ((queue cue-sheet-queue))
   (let ((tree (cue-tree queue)))
-    ;; One big "fuck you lisp" lock
-    ;; I just can't do this right on lisp, I've tryed
-    (with-lock-held ((queue-mutex queue))
-      (with-accessors ((current-source queue-current-source)) queue
-        (let* ((index (queue-index queue))
-               (current-track (get-track-by-idx tree index))
-               (next-track (get-track-by-idx tree (1+ index))))
-          (cond
-            ((not current-source)
-             (set-audio-source queue
-                               (merge-pathnames
-                                (make-pathname :directory
-                                               (pathname-directory (pathname (cue-filename queue))))
-                                (get-file-name tree current-track))
-                               (get-track-index-sec current-track)
-                               (if next-track (get-track-index-sec next-track))))
-            (current-track
-             (setf (interval-start current-source)
-                   (get-track-index-sec current-track)
-                   (interval-end current-source)
-                   (if next-track (get-track-index-sec next-track))))
-            (t
-             (setf current-source nil)))
+    (with-accessors ((current-source queue-current-source)) queue
+      (let* ((index (queue-index queue))
+             (current-track (get-track-by-idx tree index))
+             (next-track (get-track-by-idx tree (1+ index))))
+        (cond
+          ((not current-source)
+           (set-audio-source queue
+                             (merge-pathnames
+                              (make-pathname :directory
+                                             (pathname-directory (pathname (cue-filename queue))))
+                              (get-file-name tree current-track))
+                             (get-track-index-sec current-track)
+                             (if next-track (get-track-index-sec next-track))))
+          (current-track
+           (setf (interval-start current-source)
+                 (get-track-index-sec current-track)
+                 (interval-end current-source)
+                 (if next-track (get-track-index-sec next-track))))
+          (t
+           (setf current-source nil)))
 
-          (when current-track
-            (incf (queue-index queue))
-            (let ((track-info (track-info current-source)))
-              (setf (track-info-artist track-info)
-                    (get-from-toplevel tree :performer)
-                    (track-info-album track-info)
-                    (get-from-toplevel tree :title)
-                    (track-info-title track-info)
-                    (get-from-track current-track :title)
-                    (track-info-time-total track-info)
-                    (- (or (interval-end current-source)
-                           (track-info-time-total track-info))
-                       (interval-start current-source))))))
-      current-source))))
+        (when current-track
+          (incf (queue-index queue))
+          (let ((track-info (track-info current-source)))
+            (setf (track-info-artist track-info)
+                  (get-from-toplevel tree :performer)
+                  (track-info-album track-info)
+                  (get-from-toplevel tree :title)
+                  (track-info-title track-info)
+                  (get-from-track current-track :title)
+                  (track-info-time-total track-info)
+                  (- (or (interval-end current-source)
+                         (track-info-time-total track-info))
+                     (interval-start current-source))))))
+      current-source)))
 
 (defmethod current-source-time-played ((queue cue-sheet-queue))
   (let ((current-source (queue-current-source queue)))
@@ -178,23 +175,22 @@
 
 (defmethod next-source ((queue directory-queue))
   (let ((file-list (directory-file-list queue)))
-    (with-lock-held ((queue-mutex queue))
-      (with-accessors ((current-source queue-current-source)
-                       (index directory-index)) queue
+    (with-accessors ((current-source queue-current-source)
+                     (index directory-index)) queue
 
-        (tagbody choose-next
-           (when current-source
-             (close (queue-current-stream queue))
-             (setf current-source nil))
+      (tagbody choose-next
+         (when current-source
+           (close (queue-current-stream queue))
+           (setf current-source nil))
 
-           (let ((file-name (nth index file-list)))
-             (when file-name
-               (incf index)
-               (restart-case (set-audio-source queue file-name nil nil)
-                 (continue ()
-                   :report "Skip unreadable file and continue"
-                   (go choose-next))))))
-        current-source))))
+         (let ((file-name (nth index file-list)))
+           (when file-name
+             (incf index)
+             (restart-case (set-audio-source queue file-name nil nil)
+               (continue ()
+                 :report "Skip unreadable file and continue"
+                 (go choose-next))))))
+      current-source)))
 
 (defmethod set-current ((queue directory-queue) idx)
   (if (>= idx (length (directory-file-list queue)))
