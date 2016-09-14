@@ -9,6 +9,12 @@
            #:play-track
            #:print-status
            #:print-queue
+           ;; -----
            #:cue-sheet-queue
            #:one-file-queue
-           #:directory-queue))
+           #:directory-queue
+           ;; -----
+           #:make-track-printer
+           #:make-status-printer
+           #:*track-printer*
+           #:*status-printer*))

@@ -140,7 +140,11 @@
 
 (deftype status-line-element ()
   '(or string (member :time-played :time-total :state
-                      :artist :album :title)))
+                      :artist :album :title :index)))
+
+;; Subset of above
+(deftype track-info-element ()
+  '(or string (member :time-total :artist :album :title)))
 
 #+nil
 (defmacro case-with-let (keyform &body lets-and-cases)
@@ -159,6 +163,7 @@
            (queue (player-queue player)))
       (let-with-lock ((player-mutex player)
                       ((state (player-state player))
+                       (index (queue-index queue))
                        (track-info (current-source-track-info queue))
                        (time-played (current-source-time-played queue))))
           (flet ((process-item (format-item)
@@ -166,6 +171,7 @@
                    (if (stringp format-item) format-item
                        (case format-item
                          (:state state)
+                         (:index index)
                          (:time-played (if time-played (seconds=>string time-played)))
                          (:time-total (if track-info (seconds=>string
                                                       (track-info-time-total track-info))))
@@ -175,12 +181,32 @@
             (format stream "~{~a~^ ~}" (mapcar #'process-item format-list)))
           state))))
 
+(defun make-track-printer (format-list)
+  (lambda (track-info stream)
+    (flet ((process-item (format-item)
+             (declare (type track-info-element format-item))
+             (if (stringp format-item) format-item
+                 (case format-item
+                   (:time-total (seconds=>string (track-info-time-total track-info)))
+                   (:artist (track-info-artist track-info))
+                   (:album (track-info-album track-info))
+                   (:title (track-info-title track-info))))))
+      (format stream "~{~a~^ ~}" (mapcar #'process-item format-list)))))
+
+(defparameter *status-printer*
+  (make-status-printer '(:state :artist
+                         "-" :title :time-played
+                         "/" :time-total)))
+
+(defparameter *track-printer*
+  (make-track-printer '(:artist "-" :title :time-total)))
+
 (defun print-status (&optional (stream *standard-output*))
-  (let ((status-printer (make-status-printer '(:state :artist
-                                               "-" :title :time-played
-                                               "/" :time-total))))
-    (funcall status-printer stream)))
+  (funcall *status-printer* stream))
 
 (defun print-queue (&optional (stream *standard-output*))
-  (print (queue-as-list (player-queue (make-instance 'player))) stream)
+  (mapc (lambda (track-info)
+          (funcall *track-printer* track-info stream)
+          (terpri stream))
+        (queue-as-list (player-queue (make-instance 'player))))
   t)
