@@ -171,7 +171,7 @@
                    (if (stringp format-item) format-item
                        (case format-item
                          (:state state)
-                         (:index index)
+                         (:index (1- index))
                          (:time-played (if time-played (seconds=>string time-played)))
                          (:time-total (if track-info (seconds=>string
                                                       (track-info-time-total track-info))))
@@ -194,7 +194,7 @@
       (format stream "~{~a~^ ~}" (mapcar #'process-item format-list)))))
 
 (defparameter *status-printer*
-  (make-status-printer '(:state :artist
+  (make-status-printer '(:state :index :artist
                          "-" :title :time-played
                          "/" :time-total)))
 
