@@ -85,79 +85,81 @@
 
 ;; More or less for real use :)
 (defclass cue-sheet-queue (queue)
-  ((filename :reader cue-filename
-             :initarg :filename)
-
-   (tree     :accessor cue-tree
-             :documentation "Parsed cue sheet tree")))
+  ((filename   :reader cue-filename
+               :initarg :filename)
+   (source-filename :accessor cue-source-filename)
+   (time-list  :accessor cue-time-list)
+   (track-list :accessor cue-track-list)))
 
 (defmethod initialize-instance :after ((queue cue-sheet-queue) &rest args)
   (declare (ignore args))
-  (setf (cue-tree queue)
-        (parse-cue-helper (cue-filename queue))))
+  (let* ((tree (parse-cue-helper (cue-filename queue)))
+         (source-filename (merge-pathnames
+                           (make-pathname
+                            :directory (pathname-directory (pathname (cue-filename queue))))
+                           (get-file-name tree (get-track-by-idx tree 0))))
+         (artist (get-from-toplevel tree :performer))
+         (album (get-from-toplevel tree :title))
+         (total-time
+          (with-open-file (stream source-filename :element-type '(unsigned-byte 8))
+            (let ((source (make-instance (guess-source-type source-filename) :stream stream)))
+              (track-info-time-total (track-info source))))))
+    (setf (cue-source-filename queue) source-filename)
+    (let ((summary-list
+           (loop
+              with tracks = (second tree)
+              for track in tracks
+              for idx from 0 by 1 collect
+                (let ((start-time (get-track-index-sec track))
+                      (end-time (if (< (1+ idx) (length tracks))
+                                    (or
+                                     (get-track-index-sec (nth (1+ idx) tracks) :pregap)
+                                     (get-track-index-sec (nth (1+ idx) tracks) :start))
+                                    total-time)))
+                  (cons (cons start-time end-time)
+                        (make-track-info :artist artist
+                                         :album album
+                                         :title (get-from-track track :title)
+                                         :time-total (- end-time start-time)))))))
+      (setf (cue-time-list queue) (mapcar #'car summary-list)
+            (cue-track-list queue) (mapcar #'cdr summary-list)))))
 
 (defmethod next-source ((queue cue-sheet-queue))
-  (let ((tree (cue-tree queue)))
-    (with-accessors ((current-source queue-current-source)) queue
-      (let* ((index (queue-index queue))
-             (current-track (get-track-by-idx tree index))
-             (next-track (get-track-by-idx tree (1+ index))))
-        (cond
-          ((not current-source)
-           (set-audio-source queue
-                             (merge-pathnames
-                              (make-pathname :directory
-                                             (pathname-directory (pathname (cue-filename queue))))
-                              (get-file-name tree current-track))
-                             (get-track-index-sec current-track)
-                             (if next-track (get-track-index-sec next-track))))
-          (current-track
-           (setf (interval-start current-source)
-                 (get-track-index-sec current-track)
-                 (interval-end current-source)
-                 (if next-track (get-track-index-sec next-track))))
-          (t
-           (setf current-source nil)))
+  (with-accessors ((current-source queue-current-source)
+                   (index queue-index)) queue
+    (let ((current-time (nth index (cue-time-list queue)))
+          (current-track (nth index (cue-track-list queue))))
 
-        (when current-track
-          (incf (queue-index queue))
-          (let ((track-info (track-info current-source)))
-            (setf (track-info-artist track-info)
-                  (get-from-toplevel tree :performer)
-                  (track-info-album track-info)
-                  (get-from-toplevel tree :title)
-                  (track-info-title track-info)
-                  (get-from-track current-track :title)
-                  (track-info-time-total track-info)
-                  (- (or (interval-end current-source)
-                         (track-info-time-total track-info))
-                     (interval-start current-source))))))
+      (if (not current-source)
+          (set-audio-source queue (cue-source-filename queue)))
+
+      (cond
+        (current-track
+         (setf (interval-start current-source)
+               (car current-time)
+               (interval-end current-source)
+               (cdr current-time)
+               (track-info current-source)
+               current-track)
+         (incf index))
+        (t
+         (setf current-source nil)))
       current-source)))
 
 (defmethod current-source-time-played ((queue cue-sheet-queue))
   (let ((current-source (queue-current-source queue)))
     (if current-source
-        (- (floor (sample-counter current-source)
-                  (source-samplerate current-source))
+        (- (call-next-method)
            (interval-start current-source)))))
 
 (defmethod set-current ((queue cue-sheet-queue) idx)
-  (let* ((tree (cue-tree queue))
-         (track (nth idx (second tree))))
+  (let ((track (nth idx (cue-track-list queue))))
     (if (not track)
         (error 'player-error :message "Index is too large, cannot seek")))
   (call-next-method))
 
 (defmethod queue-as-list ((queue cue-sheet-queue))
-  (let* ((tree (cue-tree queue))
-         (tracks (second tree))
-         (artist (get-from-toplevel tree :performer))
-         (album (get-from-toplevel tree :title)))
-    (mapcar (lambda (track)
-              (make-track-info :artist artist
-                               :album album
-                               :title (get-from-track track :title)))
-            tracks)))
+  (cue-track-list queue))
 
 (defclass directory-queue (queue)
   ((directory   :reader queue-directory
