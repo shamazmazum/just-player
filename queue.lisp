@@ -91,9 +91,25 @@
    (time-list  :accessor cue-time-list)
    (track-list :accessor cue-track-list)))
 
+(defun read-tree (pathname)
+  (let* ((pathname (pathname pathname))
+         (type (pathname-type pathname)))
+    (cond
+      ((string= "cue" type)
+       (parse-cue-helper pathname))
+      ((string= "wv" type)
+       (with-open-file (stream pathname :element-type '(unsigned-byte 8))
+         (let* ((reader (bitreader:make-reader :stream stream))
+                (tag (ape:read-tag-from-end reader))
+                (cuesheet (second (find "Cuesheet" tag :key #'car :test #'string-equal))))
+           (if cuesheet
+               (with-input-from-string (stream cuesheet)
+                 (parse-cue stream))))))
+      (t (error 'player-error :message "Unknown cue sheet container")))))
+
 (defmethod initialize-instance :after ((queue cue-sheet-queue) &rest args)
   (declare (ignore args))
-  (let* ((tree (parse-cue-helper (cue-filename queue)))
+  (let* ((tree (read-tree (cue-filename queue)))
          (source-filename (merge-pathnames
                            (make-pathname
                             :directory (pathname-directory (pathname (cue-filename queue))))

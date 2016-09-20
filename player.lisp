@@ -116,8 +116,13 @@
 
 (defun play-cue (filename &key idx)
   "Helper for playing cue sheets"
-  (play :queue (make-instance 'cue-sheet-queue :filename filename)
-        :idx idx))
+  (restart-case
+      (play :queue (with-error-handling
+                     (make-instance 'cue-sheet-queue :filename filename))
+            :idx idx)
+    (continue ()
+      :report "Skip reading cuesheet and continue as if audio source is one big track"
+      (play-single filename))))
 
 (defun play-single (filename)
   "Helper for playing single files"

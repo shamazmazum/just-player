@@ -61,6 +61,7 @@
   `(handler-bind
        (((or player-error
              flac:flac-error
-             wv:wavpack-error)
+             wv:wavpack-error
+             ape:ape-error)
          #'error-handler))
     ,@body))
