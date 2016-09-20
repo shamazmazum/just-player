@@ -91,6 +91,13 @@
    (time-list  :accessor cue-time-list)
    (track-list :accessor cue-track-list)))
 
+(defun cuesheet-from-apev2 (tag)
+  (let ((cuesheet (second (find "Cuesheet" tag :key #'car :test #'string-equal))))
+    (if cuesheet
+        (with-input-from-string (stream cuesheet)
+          (parse-cue stream))
+        (error 'player-error :message "APEv2 tag does not contain a cuesheet"))))
+
 (defun read-tree (pathname)
   (let* ((pathname (pathname pathname))
          (type (pathname-type pathname)))
@@ -100,11 +107,8 @@
       ((string= "wv" type)
        (with-open-file (stream pathname :element-type '(unsigned-byte 8))
          (let* ((reader (bitreader:make-reader :stream stream))
-                (tag (ape:read-tag-from-end reader))
-                (cuesheet (second (find "Cuesheet" tag :key #'car :test #'string-equal))))
-           (if cuesheet
-               (with-input-from-string (stream cuesheet)
-                 (parse-cue stream))))))
+                (tag (ape:read-tag-from-end reader)))
+           (cuesheet-from-apev2 tag))))
       (t (error 'player-error :message "Unknown cue sheet container")))))
 
 (defmethod initialize-instance :after ((queue cue-sheet-queue) &rest args)
