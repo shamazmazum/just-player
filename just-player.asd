@@ -9,4 +9,5 @@
                  (:file "sources")
                  (:file "backends")
                  (:file "queue")
-                 (:file "player")))
+                 (:file "player")
+                 (:file "interface")))

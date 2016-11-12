@@ -17,4 +17,7 @@
            #:make-track-printer
            #:make-status-printer
            #:*track-printer*
-           #:*status-printer*))
+           #:*status-printer*
+
+           #:defcommand
+           #:command-loop))
