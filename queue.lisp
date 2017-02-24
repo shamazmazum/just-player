@@ -103,7 +103,7 @@
          (type (pathname-type pathname)))
     (cond
       ((string= "cue" type)
-       (parse-cue-helper pathname))
+       (parse-cue-file pathname))
       ((string= "wv" type)
        (with-open-file (stream pathname :element-type '(unsigned-byte 8))
          (let* ((reader (bitreader:make-reader :stream stream))
@@ -118,8 +118,8 @@
                            (make-pathname
                             :directory (pathname-directory (pathname (cue-filename queue))))
                            (get-file-name tree (get-track-by-idx tree 0))))
-         (artist (get-from-toplevel tree :performer))
-         (album (get-from-toplevel tree :title))
+         (artist (get-command-arg (car tree) :performer))
+         (album (get-command-arg (car tree) :title))
          (total-time
           (with-open-file (stream source-filename :element-type '(unsigned-byte 8))
             (let ((source (make-instance (guess-source-type source-filename) :stream stream)))
@@ -139,7 +139,7 @@
                   (cons (cons start-time end-time)
                         (make-track-info :artist artist
                                          :album album
-                                         :title (get-from-track track :title)
+                                         :title (get-command-arg track :title)
                                          :time-total (- end-time start-time)))))))
       (setf (cue-time-list queue) (mapcar #'car summary-list)
             (cue-track-list queue) (mapcar #'cdr summary-list)))))
