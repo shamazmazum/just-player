@@ -32,6 +32,9 @@
   (:documentation "A native block size for this source."))
 (defgeneric source-totalsamples (source))
 
+(defmethod prepare-decoder ((source audio-source))
+  t)
+
 (defclass time-interval ()
   ((start :accessor interval-start
           :initarg :start
@@ -178,3 +181,33 @@
 
 (defmethod seek ((source wv-source) sample)
   (wv:seek-sample (source-reader source) sample))
+
+;; Wavelet audio
+(defclass wa-source (audio-source time-interval)
+  ((streaminfo :accessor wa-streaminfo)))
+
+(defmethod initialize-instance :after ((source wa-source) &rest args)
+  (declare (ignore args))
+  (let ((bitstream (make-instance
+                    'trivial-bit-streams:bit-input-stream
+                    :callback (trivial-bit-streams:make-stream-input-callback (source-stream source)))))
+    (setf (wa-streaminfo source) (first (wavelet-audio:open-wavelet-audio bitstream))
+          (source-reader source) bitstream)))
+
+(define-getters (wa-source wa-streaminfo)
+    (source-samplerate   . wavelet-audio:streaminfo-samplerate)
+    (source-samplesize   . wavelet-audio:streaminfo-bps)
+    (source-channels     . wavelet-audio:streaminfo-channels)
+    (source-blocksize    . wavelet-audio:streaminfo-block-size)
+    (source-totalsamples . wavelet-audio:streaminfo-samples))
+
+(defmethod decode-frame ((source wa-source))
+  (let ((streaminfo (wa-streaminfo source)))
+    (prog1
+        (wavelet-audio:decode-block
+         (wavelet-audio:read-block (source-reader source) streaminfo))
+      (incf (sample-counter source)
+            (wavelet-audio:streaminfo-block-size streaminfo)))))
+  
+(defmethod seek ((source wa-source) sample)
+  t)

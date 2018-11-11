@@ -48,6 +48,7 @@
     (cond
       ((string= "flac" extension) 'flac-source)
       ((string= "wv" extension) 'wv-source)
+      ((string= "wa" extension) 'wa-source)
       (t (error 'player-error :message "Unknown file type")))))
 
 (defun set-audio-source (queue pathname &optional start end)
