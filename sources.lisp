@@ -210,4 +210,11 @@
             (wavelet-audio:streaminfo-block-size streaminfo)))))
   
 (defmethod seek ((source wa-source) sample)
-  t)
+  (close (source-reader source))
+  (wavelet-audio:seek-sample (source-stream source)
+                             (wa-streaminfo source)
+                             sample)
+  (setf (source-reader source)
+        (make-instance
+         'trivial-bit-streams:bit-input-stream
+         :callback (trivial-bit-streams:make-stream-input-callback (source-stream source)))))
