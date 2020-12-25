@@ -35,7 +35,7 @@ is defined in CONFIGURE-PARAMETERS call and is both backend and source dependant
 (defun guess-sample-format (samplesize)
   "Guess OSS sample format based on sample size"
   (case samplesize
-    (8  :afmt-s8
+    (8  :afmt-s8)
     (16 :afmt-s16-le)
     (32 :afmt-s32-le)
     (t (error 'player-error
