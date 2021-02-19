@@ -218,3 +218,35 @@
         (make-instance
          'trivial-bit-streams:bit-input-stream
          :callback (trivial-bit-streams:make-stream-input-callback (source-stream source)))))
+
+;; Ape
+(defclass ape-source (audio-source time-interval)
+  ((current-frame :accessor ape-current-frame
+                  :initform 0)
+   (metadata      :accessor ape-metadata)))
+
+(defmethod initialize-instance :after ((source ape-source) &rest args)
+  (declare (ignore args))
+  (let ((reader (ape:open-ape (source-stream source))))
+    (setf (source-reader source) reader
+          (ape-metadata source) (ape:read-metadata reader))))
+
+(define-getters (ape-source ape-metadata)
+    (source-samplerate   . ape:metadata-samplerate)
+    (source-samplesize   . ape:metadata-bps)
+    (source-channels     . ape:metadata-channels)
+    ;; I think I can set maximal size here
+    (source-blocksize    . ape:metadata-blocks-per-frame)
+    (source-totalsamples . ape:metadata-total-samples))
+
+(defmethod decode-frame ((source ape-source))
+  (let ((frame (ape:read-frame (source-reader source)
+                               (ape-metadata source)
+                               (ape-current-frame source))))
+    (incf (ape-current-frame source))
+    (incf (sample-counter source)
+          (ape:frame-samples frame))
+    (ape:decode-frame frame)))
+
+(defmethod seek ((source ape-source) sample)
+  t)
