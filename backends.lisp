@@ -50,6 +50,7 @@ is defined in CONFIGURE-PARAMETERS call and is both backend and source dependant
         (close device))
     (setf device
           (make-instance 'dsp-device-output
+                         :policy 8
                          :sample-format (guess-sample-format (source-samplesize source))
                          :sample-rate (source-samplerate source)
                          :channels (source-channels source))
