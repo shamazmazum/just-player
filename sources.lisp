@@ -249,4 +249,6 @@
     (ape:decode-frame frame)))
 
 (defmethod seek ((source ape-source) sample)
-  t)
+  (setf (ape-current-frame source)
+        (floor sample (ape:metadata-blocks-per-frame
+                       (ape-metadata source)))))
