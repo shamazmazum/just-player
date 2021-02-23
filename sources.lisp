@@ -174,7 +174,10 @@
                                (source-reader source))))
 
 (defmethod decode-frame ((source wv-source))
-  (let ((wv-block (wv:read-wv-block (source-reader source))))
+  (let ((wv-block
+          ;; Muffle warnings about unknown metadata blocks
+          (handler-bind ((wv:wavpack-warning #'muffle-warning))
+            (wv:read-wv-block (source-reader source)))))
     (setf (sample-counter source)
           (wv:block-block-index wv-block))
     (wv:decode-wv-block wv-block)))
