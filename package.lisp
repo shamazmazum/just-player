@@ -1,5 +1,14 @@
 (defpackage just-player
-  (:use #:cl #:cl-oss #:bordeaux-threads #:cue-parser #:fad)
+  (:use #:cl
+        #:cl-oss
+        #:bordeaux-threads
+        #:cue-parser
+        #:fad)
+  (:local-nicknames (:wv        :easy-audio.wv)
+                    (:flac      :easy-audio.flac)
+                    (:ape       :easy-audio.ape)
+                    (:core      :easy-audio.core)
+                    (:bitreader :easy-audio.bitreader))
   (:export #:play
            #:play-cue
            #:play-directory

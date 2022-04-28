@@ -63,7 +63,7 @@ is defined in CONFIGURE-PARAMETERS call and is both backend and source dependant
 (defmethod write-data-frame ((backend oss-backend)
                              (source audio-source))
   (write-sequence
-   (utils:mixchannels
+   (core:mixchannels
     (backend-output-buffer backend)
     (decode-frame source))
    (backend-audio-device backend)))
