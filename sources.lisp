@@ -33,7 +33,7 @@
 (defgeneric source-totalsamples (source))
 
 (defmethod prepare-decoder ((source audio-source))
-  t)
+  (values))
 
 (defclass time-interval ()
   ((start :accessor interval-start
@@ -123,11 +123,6 @@
             (flac:streaminfo-maxblocksize streaminfo))
         (error 'player-error :message "Variable block size"))))
 
-(defmethod prepare-decoder ((source flac-source))
-  (let ((streaminfo (first (flac-metadata source))))
-    (declare (type flac:streaminfo streaminfo))
-    (setq flac:*out-buffers* (flac:make-output-buffers streaminfo))))
-
 (defmethod decode-frame ((source flac-source))
   (let ((streaminfo (first (flac-metadata source))))
     (declare (type flac:streaminfo streaminfo))
@@ -168,10 +163,6 @@
     (source-channels     . wv:block-channels)
     (source-blocksize    . wv:block-block-samples)
     (source-totalsamples . wv:block-total-samples)))
-
-(defmethod prepare-decoder ((source wv-source))
-  (setq wv:*residual-buffers* (wv:make-output-buffers
-                               (source-reader source))))
 
 (defmethod decode-frame ((source wv-source))
   (let ((wv-block
