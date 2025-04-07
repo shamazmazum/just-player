@@ -37,6 +37,7 @@ is defined in CONFIGURE-PARAMETERS call and is both backend and source dependant
   (case samplesize
     (8  :afmt-s8)
     (16 :afmt-s16-le)
+    (24 :afmt-s32-le)
     (32 :afmt-s32-le)
     (t (error 'player-error
               :message "Wrong audio format"))))
@@ -62,11 +63,16 @@ is defined in CONFIGURE-PARAMETERS call and is both backend and source dependant
 
 (defmethod write-data-frame ((backend oss-backend)
                              (source audio-source))
+  (let ((data (core:mixchannels
+               (backend-output-buffer backend)
+               (decode-frame source))))
   (write-sequence
-   (core:mixchannels
-    (backend-output-buffer backend)
-    (decode-frame source))
-   (backend-audio-device backend)))
+   (if (= (source-samplesize source) 24)
+       (map '(vector (signed-byte 32))
+            (lambda (x) (ash x 8))
+            data)
+       data)
+   (backend-audio-device backend))))
 
 (defmethod close-backend ((backend oss-backend))
   (if (slot-boundp backend 'audio-device) ; KLUDGE
