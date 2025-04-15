@@ -130,7 +130,7 @@
                                   streaminfo)))
       (incf (sample-counter source)
             (flac:frame-block-size frame))
-      (flac:frame-decode frame))))
+      (flac:decode-frame frame))))
 
 (defmethod seek ((source flac-source) sample)
   (let ((streaminfo (first (flac-metadata source))))
