@@ -96,16 +96,16 @@
 (defmethod initialize-track-info ((source flac-source))
   (let ((vorbis-comment (find 'flac:vorbis-comment (flac-metadata source)
                               :key #'type-of)))
-    (if vorbis-comment
-        (let ((track-info (track-info source))
-              (parsed-comments (mapcar #'key/val-from-vorbis-comment
-                                       (flac:vorbis-user-comments vorbis-comment))))
-          (setf (track-info-artist track-info)
-                (cdr (assoc :artist parsed-comments))
-                (track-info-album track-info)
-                (cdr (assoc :album parsed-comments))
-                (track-info-title track-info)
-                (cdr (assoc :title parsed-comments))))))
+    (when vorbis-comment
+      (let ((track-info (track-info source))
+            (parsed-comments (mapcar #'key/val-from-vorbis-comment
+                                     (flac:vorbis-comment-user vorbis-comment))))
+        (setf (track-info-artist track-info)
+              (cdr (assoc :artist parsed-comments))
+              (track-info-album track-info)
+              (cdr (assoc :album parsed-comments))
+              (track-info-title track-info)
+              (cdr (assoc :title parsed-comments))))))
   (call-next-method))
 
 (defmethod initialize-instance :after ((source flac-source) &rest args)
