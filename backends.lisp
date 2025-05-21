@@ -2,8 +2,8 @@
 
 ;; General definitions
 (defclass audio-backend ()
-  ((output-buffer :accessor backend-output-buffer)
-   (audio-device :accessor backend-audio-device))
+  ((audio-device :initform nil
+                 :accessor backend-audio-device))
   (:documentation "General audio backend class"))
 
 (defgeneric configure-parameters (backend source)
@@ -44,27 +44,20 @@ is defined in CONFIGURE-PARAMETERS call and is both backend and source dependant
 
 (defmethod configure-parameters ((backend oss-backend)
                                  (source audio-source))
-  (with-accessors ((device backend-audio-device)
-                   (buffer backend-output-buffer)) backend
-    (if (and (slot-boundp backend 'audio-device)
-             (open-stream-p device))
-        (close device))
-    (setf device
-          (make-instance 'dsp-device-output
-                         :policy 8
-                         :sample-format (guess-sample-format (source-samplesize source))
-                         :sample-rate (source-samplerate source)
-                         :channels (source-channels source))
-          buffer
-          (make-array (* (source-channels source)
-                         (source-blocksize source))
-                      :element-type '(signed-byte 32))))
+  (let ((device (backend-audio-device backend)))
+    (when (and device (open-stream-p device))
+      (close device)))
+  (setf (backend-audio-device backend)
+        (make-instance 'dsp-device-output
+                       :policy 8
+                       :sample-format (guess-sample-format (source-samplesize source))
+                       :sample-rate (source-samplerate source)
+                       :channels (source-channels source)))
   (source-blocksize source))
 
 (defmethod write-data-frame ((backend oss-backend)
                              (source audio-source))
-  (let ((data (core:mixchannels
-               (backend-output-buffer backend)
+  (let ((data (core:interleave-channels
                (decode-frame source))))
   (write-sequence
    (if (= (source-samplesize source) 24)
